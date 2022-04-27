@@ -191,7 +191,7 @@ class AlignedSpinTemplate(object):
                  ('template_duration', float32), ('f_lower', float32),
                  ('approximant', 'S32')]
 
-    def __init__(self, m1, m2, spin1z, spin2z, bank, flow=None, duration=None):
+    def __init__(self, m1, m2, spin1z, spin2z, bank, fhigh_max=4096.0, flow=None, duration=None):
 
         self.m1 = float(m1)
         self.m2 = float(m2)
@@ -216,7 +216,7 @@ class AlignedSpinTemplate(object):
         self.tau0_40 = compute_tau0_40(self._mchirp)
         self.tau0 = compute_tau0(self._mchirp, bank.flow)
         self._dur = duration
-        self._f_final = None
+        self._f_final = fhigh_max
         self._fhigh_max = bank.fhigh_max
 
     def optimize_flow(self, flow_min, fhigh_max, noise_model, df=0.1,
@@ -302,12 +302,12 @@ class AlignedSpinTemplate(object):
         raise NotImplementedError(err_msg)
 
     @classmethod
-    def from_sim(cls, sim, bank):
-        return cls(sim.mass1, sim.mass2, sim.spin1z, sim.spin2z, bank)
+    def from_sim(cls, sim, f_final, bank):
+        return cls(sim.mass1, sim.mass2, sim.spin1z, sim.spin2z, bank, f_final)
 
     @classmethod
-    def from_sngl(cls, sngl, bank):
-        return cls(sngl.mass1, sngl.mass2, sngl.spin1z, sngl.spin2z, bank)
+    def from_sngl(cls, sngl, f_final, bank):
+        return cls(sngl.mass1, sngl.mass2, sngl.spin1z, sngl.spin2z, bank, fhigh_max=f_final)
 
     @classmethod
     def from_dict(cls, params, idx, bank):
@@ -387,7 +387,7 @@ class AlignedSpinTemplate(object):
                 None, approx)
         return hplus_fd
 
-    def get_whitened_normalized(self, df, ASD=None, PSD=None):
+    def get_whitened_normalized(self, df, f_final = f_final, ASD=None, PSD=None):
         """
         Return a COMPLEX8FrequencySeries of the waveform, whitened by the
         given ASD and normalized. The waveform is not zero-padded to
@@ -452,7 +452,7 @@ class InspiralAlignedSpinTemplate(AlignedSpinTemplate):
     """
     __slots__ = ("chired")
 
-    def __init__(self, m1, m2, spin1z, spin2z, bank, flow=None, duration=None):
+    def __init__(self, m1, m2, spin1z, spin2z, bank, fhigh_max=4096.0, flow=None, duration=None):
 
         self.chired = lalsim.SimInspiralTaylorF2ReducedSpinComputeChi(
             m1,
@@ -460,7 +460,7 @@ class InspiralAlignedSpinTemplate(AlignedSpinTemplate):
             spin1z,
             spin2z
         )
-        AlignedSpinTemplate.__init__(self, m1, m2, spin1z, spin2z, bank,
+        AlignedSpinTemplate.__init__(self, m1, m2, spin1z, spin2z, bank, fhigh_max=fhigh_max,
                                      flow=flow, duration=duration)
 
     def _get_dur(self):
@@ -474,14 +474,29 @@ class IMRPhenomBTemplate(IMRAlignedSpinTemplate):
     approximant = "IMRPhenomB"
     param_names = ("m1", "m2", "chieff")
     param_formats = ("%.2f", "%.2f", "%+.2f")
+    def _compute_waveform(self, df, f_final):
+        return lalsim.SimIMRPhenomBGenerateFD(0, df,
+            self.m1 * MSUN_SI, self.m2 * MSUN_SI,
+            self.chieff, self.flow, f_final, 1000000 * PC_SI)
 
 
 class IMRPhenomCTemplate(IMRPhenomBTemplate):
     approximant = "IMRPhenomC"
+    def _compute_waveform(self, df, f_final):
+        return lalsim.SimIMRPhenomCGenerateFD(
+            0, df,
+            self.m1 * MSUN_SI, self.m2 * MSUN_SI,
+            self.chieff, self.flow, f_final, 1000000 * PC_SI)
 
 
 class IMRPhenomDTemplate(IMRAlignedSpinTemplate):
     approximant = "IMRPhenomD"
+    def _compute_waveform(self, df, f_final):
+        return lalsim.SimIMRPhenomDGenerateFD(
+            0, 0, df, # ref phase, ref frequency, df
+            self.m1 * MSUN_SI, self.m2 * MSUN_SI,
+            self.spin1z, self.spin2z,
+            self.flow, f_final, 1000000 * PC_SI, self.LALDict)
 
     def _get_dur(self):
         dur = lalsim.SimIMRPhenomDChirpTime(self.m1 * MSUN_SI,

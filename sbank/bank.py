@@ -46,11 +46,12 @@ class lazy_nhoods(object):
 
 class Bank(object):
 
-    def __init__(self, noise_model, flow, use_metric=False, cache_waveforms=False, nhood_size=1.0,
+    def __init__(self, noise_model, flow, f_final, use_metric=False, cache_waveforms=False, nhood_size=1.0,
                  nhood_param="tau0", coarse_match_df=None, iterative_match_df_max=None,
                  fhigh_max=None, optimize_flow=None, flow_column=None):
         self.noise_model = noise_model
         self.flow = flow
+        self.f_final = f_final
         self.use_metric = use_metric
         self.cache_waveforms = cache_waveforms
         self.coarse_match_df = coarse_match_df
@@ -115,8 +116,8 @@ class Bank(object):
         merged._nmatch = sum(b._nmatch for b in banks)
         return merged
 
-    def add_from_sngls(self, sngls, tmplt_class):
-        newtmplts = [tmplt_class.from_sngl(s, bank=self) for s in sngls]
+    def add_from_sngls(self, sngls, tmplt_class, f_final):
+        newtmplts = [tmplt_class.from_sngl(s, f_final, bank=self) for s in sngls]
         for template in newtmplts:
             # Mark all templates as seed points
             template.is_seed_point = True
@@ -141,9 +142,9 @@ class Bank(object):
         self._templates.sort(key=attrgetter(self.nhood_param))
 
     @classmethod
-    def from_sngls(cls, sngls, tmplt_class, *args, **kwargs):
+    def from_sngls(cls, sngls, tmplt_class, f_final,  *args, **kwargs):
         bank = cls(*args, **kwargs)
-        new_tmplts = [tmplt_class.from_sngl(s, bank=bank) for s in sngls]
+        new_tmplts = [tmplt_class.from_sngl(s, f_final, bank=bank) for s in sngls]
         bank._templates.extend(new_tmplts)
         bank._templates.sort(key=attrgetter(bank.nhood_param))
         # Mark all templates as seed points
@@ -217,7 +218,7 @@ class Bank(object):
                 PSD = get_PSD(self.coarse_match_df, self.flow, f_max,
                               self.noise_model)
                 match = self.compute_match(tmplt, proposal,
-                                           self.coarse_match_df, PSD=PSD)
+                                           self.coarse_match_df, f_final = self.f_final, PSD=PSD)
                 if match == 0:
                     err_msg = "Match is 0. This might indicate that you have "
                     err_msg += "the df value too high. Please try setting the "
@@ -281,7 +282,7 @@ class Bank(object):
                                        self.noise_model)
 
         # compute matches
-        matches = [self.compute_match(tmplt, proposal, df, ASD=ASD)
+        matches = [self.compute_match(tmplt, proposal, df, f_final=self.f_final, ASD=ASD)
                    for tmplt in tmpbank]
         best_tmplt_ind = np.argmax(matches)
         self._nmatch += len(tmpbank)
